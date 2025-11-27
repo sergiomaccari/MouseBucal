@@ -1,347 +1,346 @@
 import pandas as pd
-import matplotlib.pyplot as plt
 import os
 import tkinter as tk
-from tkinter import filedialog, messagebox
-from matplotlib.backends.backend_tkagg import FigureCanvasTkAgg
+from tkinter import filedialog, messagebox, ttk
 import numpy as np
 
-# --- CONFIGURAÇÃO ---
-# Defina aqui o caminho da pasta onde o jogo salva os arquivos
-PASTA_CSV = "D:\Trabalhos UTFPR\Oficinas" 
+from matplotlib.figure import Figure
+from matplotlib.backends.backend_tkagg import FigureCanvasTkAgg
+import matplotlib.pyplot as plt
+import matplotlib.cm as cm
 
-class GraficoAgilidade:
+PASTA_PADRAO = r"D:\Trabalhos UTFPR\Oficinas" 
+COR_FUNDO = "#f0f0f0"
+COR_DESTAQUE = "#4a7a8c"
+
+class AnalisadorAgilidadeApp:
     def __init__(self, root):
         self.root = root
-        self.root.title("Analisador de Tempos de Reação")
-        self.root.geometry("1000x700")
-        
+        self.configurar_janela()
+
         self.arquivos_selecionados = []
-        self.dados = {}
+        self.dados_cache = {}
         
-        # Carregar automaticamente os arquivos da pasta configurada
-        self.carregar_pasta_automatica()
-        
-        self.criar_interface()
-    
-    def carregar_pasta_automatica(self):
-        """Carrega automaticamente os arquivos CSV da pasta configurada"""
-        if os.path.exists(PASTA_CSV) and os.path.isdir(PASTA_CSV):
-            print(f"Procurando arquivos CSV na pasta: {PASTA_CSV}")
-            
-            arquivos_encontrados = 0
-            for arquivo in os.listdir(PASTA_CSV):
-                if arquivo.endswith('.csv') and 'teste_agilidade' in arquivo:
-                    caminho_completo = os.path.join(PASTA_CSV, arquivo)
-                    self.arquivos_selecionados.append(caminho_completo)
-                    arquivos_encontrados += 1
-                    print(f"✓ Encontrado: {arquivo}")
-            
-            if arquivos_encontrados > 0:
-                print(f"Total de arquivos encontrados: {arquivos_encontrados}")
-            else:
-                print("❌ Nenhum arquivo CSV encontrado na pasta especificada.")
-                print("   Certifique-se de que os arquivos têm 'teste_agilidade' no nome.")
-        else:
-            print(f"❌ Pasta não encontrada: {PASTA_CSV}")
-            print("   Verifique o caminho configurado na variável PASTA_CSV")
-    
-    def criar_interface(self):
-        # Frame principal
-        main_frame = tk.Frame(self.root)
-        main_frame.pack(fill=tk.BOTH, expand=True, padx=10, pady=10)
-        
-        # Frame de informações da pasta
-        info_frame = tk.Frame(main_frame, bg="#e8f4fd", relief=tk.RAISED, bd=1)
-        info_frame.pack(fill=tk.X, pady=(0, 10))
-        
-        info_text = f"Pasta configurada: {os.path.abspath(PASTA_CSV)} | Arquivos carregados: {len(self.arquivos_selecionados)}"
-        tk.Label(info_frame, text=info_text, bg="#e8f4fd", font=("Arial", 9)).pack(pady=5)
-        
-        # Frame de controles
-        control_frame = tk.Frame(main_frame)
-        control_frame.pack(fill=tk.X, pady=(0, 10))
-        
-        # Botões de seleção de arquivos
-        btn_frame = tk.Frame(control_frame)
-        btn_frame.pack(fill=tk.X)
-        
-        tk.Button(btn_frame, text="Selecionar Arquivo CSV", 
-                 command=self.selecionar_arquivo, width=20).pack(side=tk.LEFT, padx=(0, 10))
-        
-        tk.Button(btn_frame, text="Selecionar Outra Pasta", 
-                 command=self.selecionar_pasta, width=20).pack(side=tk.LEFT, padx=(0, 10))
-        
-        tk.Button(btn_frame, text="Recarregar Pasta Configurada", 
-                 command=self.recarregar_pasta, width=20, bg="#FFE4B2").pack(side=tk.LEFT, padx=(0, 10))
-        
-        tk.Button(btn_frame, text="Limpar Seleção", 
-                 command=self.limpar_selecao, width=15).pack(side=tk.LEFT, padx=(0, 10))
-        
-        # Frame de opções
-        options_frame = tk.Frame(control_frame)
-        options_frame.pack(fill=tk.X, pady=10)
-        
-        # Checkboxes para opções de visualização
         self.var_media = tk.BooleanVar(value=True)
         self.var_linhas = tk.BooleanVar(value=True)
         self.var_pontos = tk.BooleanVar(value=True)
         self.var_tendencia = tk.BooleanVar(value=False)
         
-        tk.Checkbutton(options_frame, text="Mostrar Média", 
-                      variable=self.var_media).pack(side=tk.LEFT, padx=(0, 15))
-        tk.Checkbutton(options_frame, text="Mostrar Linhas", 
-                      variable=self.var_linhas).pack(side=tk.LEFT, padx=(0, 15))
-        tk.Checkbutton(options_frame, text="Mostrar Pontos", 
-                      variable=self.var_pontos).pack(side=tk.LEFT, padx=(0, 15))
-        tk.Checkbutton(options_frame, text="Linha de Tendência", 
-                      variable=self.var_tendencia).pack(side=tk.LEFT, padx=(0, 15))
+        self.construir_interface()
         
-        # Botão para gerar gráfico
-        tk.Button(options_frame, text="Gerar Gráfico", 
-                 command=self.gerar_grafico, bg="#4CAF50", fg="white", width=15,
-                 font=("Arial", 10, "bold")).pack(side=tk.RIGHT)
+        # Tentativa de carregamento automático
+        self.carregar_pasta_inicial()
+
+    def configurar_janela(self):
+        self.root.title("Analisador de Performance - Agilidade e Reação")
+        self.root.state('zoomed') # Maximizar janela
+        self.root.configure(bg=COR_FUNDO)
         
-        # Lista de arquivos selecionados
-        lista_frame = tk.Frame(main_frame)
-        lista_frame.pack(fill=tk.X, pady=(0, 10))
+        # Estilo para Treeview (Tabela)
+        style = ttk.Style()
+        style.theme_use("clam")
+        style.configure("Treeview", background="white", fieldbackground="white", rowheight=25)
+        style.configure("Treeview.Heading", font=('Arial', 9, 'bold'), background="#e1e1e1")
+
+    def construir_interface(self):
+        # ================= LAYOUT PRINCIPAL (GRID) =================
+        self.root.columnconfigure(0, weight=1) # Coluna esquerda (Controles)
+        self.root.columnconfigure(1, weight=3) # Coluna direita (Gráfico e Tabela)
+        self.root.rowconfigure(0, weight=1)
+
+        # --- PAINEL ESQUERDO (CONTROLES) ---
+        frame_esq = tk.Frame(self.root, bg="#e0e0e0", padx=10, pady=10, width=250)
+        frame_esq.grid(row=0, column=0, sticky="nsew")
+        frame_esq.grid_propagate(False) # Mantém largura fixa
+
+        # Título Lateral
+        tk.Label(frame_esq, text="CONTROLES", font=("Arial", 12, "bold"), bg="#e0e0e0", fg="#333").pack(pady=(0, 10))
+
+        # Botões de Arquivo
+        self.criar_botao(frame_esq, "📂 Selecionar Arquivos", self.selecionar_arquivos, "#ffffff").pack(fill=tk.X, pady=2)
+        self.criar_botao(frame_esq, "📁 Selecionar Pasta", self.selecionar_pasta, "#ffffff").pack(fill=tk.X, pady=2)
+        self.criar_botao(frame_esq, "🗑 Limpar Tudo", self.limpar_tudo, "#ffcccc").pack(fill=tk.X, pady=(10, 2))
+
+        # Lista de Arquivos
+        tk.Label(frame_esq, text="Arquivos Carregados:", bg="#e0e0e0", font=("Arial", 9)).pack(anchor="w", pady=(15, 0))
+        self.lista_box = tk.Listbox(frame_esq, height=10, selectmode=tk.EXTENDED, font=("Consolas", 9))
+        self.lista_box.pack(fill=tk.X, pady=2)
         
-        tk.Label(lista_frame, text="Arquivos Selecionados:", font=("Arial", 10, "bold")).pack(anchor=tk.W)
+        # Opções do Gráfico
+        tk.Label(frame_esq, text="Visualização:", bg="#e0e0e0", font=("Arial", 9, "bold")).pack(anchor="w", pady=(15, 5))
+        tk.Checkbutton(frame_esq, text="Média Geral", variable=self.var_media, bg="#e0e0e0", command=self.atualizar_visualizacao).pack(anchor="w")
+        tk.Checkbutton(frame_esq, text="Linhas Individuais", variable=self.var_linhas, bg="#e0e0e0", command=self.atualizar_visualizacao).pack(anchor="w")
+        tk.Checkbutton(frame_esq, text="Mostrar Pontos", variable=self.var_pontos, bg="#e0e0e0", command=self.atualizar_visualizacao).pack(anchor="w")
+        tk.Checkbutton(frame_esq, text="Linha de Tendência", variable=self.var_tendencia, bg="#e0e0e0", command=self.atualizar_visualizacao).pack(anchor="w")
+
+        self.criar_botao(frame_esq, "🔄 ATUALIZAR", self.atualizar_visualizacao, COR_DESTAQUE, fg="white").pack(fill=tk.X, pady=20)
+
+        self.lbl_status = tk.Label(frame_esq, text="Aguardando...", bg="#e0e0e0", fg="gray", wraplength=230, justify="left")
+        self.lbl_status.pack(side=tk.BOTTOM, fill=tk.X)
+
+        frame_dir = tk.Frame(self.root, bg=COR_FUNDO)
+        frame_dir.grid(row=0, column=1, sticky="nsew", padx=10, pady=10)
         
-        self.lista_arquivos = tk.Listbox(lista_frame, height=4)
-        self.lista_arquivos.pack(fill=tk.X, pady=(5, 0))
+        frame_dir.rowconfigure(0, weight=2) # Gráfico ganha mais espaço
+        frame_dir.rowconfigure(1, weight=1) # Tabela ganha menos espaço
+        frame_dir.columnconfigure(0, weight=1)
+
+        # 1. Área do Gráfico
+        self.frame_grafico = tk.LabelFrame(frame_dir, text="Análise Gráfica", bg=COR_FUNDO)
+        self.frame_grafico.grid(row=0, column=0, sticky="nsew", pady=(0, 10))
         
-        # Atualizar lista com arquivos carregados automaticamente
-        self.atualizar_lista_arquivos()
+        self.fig = Figure(figsize=(5, 4), dpi=100)
+        self.ax = self.fig.add_subplot(111)
+        self.canvas = FigureCanvasTkAgg(self.fig, self.frame_grafico)
+        self.canvas.get_tk_widget().pack(fill=tk.BOTH, expand=True, padx=5, pady=5)
+
+        frame_inferior = tk.Frame(frame_dir, bg=COR_FUNDO)
+        frame_inferior.grid(row=1, column=0, sticky="nsew")
+
+        frame_resumo = tk.LabelFrame(frame_inferior, text="Estatísticas Globais", bg=COR_FUNDO, width=250)
+        frame_resumo.pack(side=tk.LEFT, fill=tk.Y, padx=(0, 10))
+        frame_resumo.pack_propagate(False)
         
-        # Frame do gráfico
-        graph_frame = tk.Frame(main_frame)
-        graph_frame.pack(fill=tk.BOTH, expand=True)
+        self.txt_resumo = tk.Text(frame_resumo, bg="#f9f9f9", wrap=tk.WORD, font=("Consolas", 10), state="disabled", relief=tk.FLAT)
+        self.txt_resumo.pack(fill=tk.BOTH, expand=True, padx=5, pady=5)
+
+        frame_tabela_container = tk.LabelFrame(frame_inferior, text="Dados por Participante", bg=COR_FUNDO)
+        frame_tabela_container.pack(side=tk.LEFT, fill=tk.BOTH, expand=True)
+
+        colunas = ('arquivo', 'tempo_medio', 'melhor_tempo', 'erros', 'precisao')
+        self.tabela = ttk.Treeview(frame_tabela_container, columns=colunas, show='headings')
+
+        self.tabela.heading('arquivo', text='Arquivo / Participante')
+        self.tabela.heading('tempo_medio', text='Média (s)')
+        self.tabela.heading('melhor_tempo', text='Melhor (s)')
+        self.tabela.heading('erros', text='Erros')
+        self.tabela.heading('precisao', text='Precisão')
+
+        self.tabela.column('arquivo', width=200, minwidth=100)
+        self.tabela.column('tempo_medio', width=80, anchor='center')
+        self.tabela.column('melhor_tempo', width=80, anchor='center')
+        self.tabela.column('erros', width=60, anchor='center')
+        self.tabela.column('precisao', width=80, anchor='center')
+
+        sb_y = ttk.Scrollbar(frame_tabela_container, orient=tk.VERTICAL, command=self.tabela.yview)
+        sb_x = ttk.Scrollbar(frame_tabela_container, orient=tk.HORIZONTAL, command=self.tabela.xview)
+        self.tabela.configure(yscroll=sb_y.set, xscroll=sb_x.set)
+
+        sb_y.pack(side=tk.RIGHT, fill=tk.Y)
+        sb_x.pack(side=tk.BOTTOM, fill=tk.X)
+        self.tabela.pack(side=tk.LEFT, fill=tk.BOTH, expand=True)
+
+    def criar_botao(self, parent, texto, comando, cor_bg, fg="black"):
+        return tk.Button(parent, text=texto, command=comando, bg=cor_bg, fg=fg, relief=tk.RAISED, bd=1, font=("Arial", 9))
+
+    def log(self, mensagem):
+        self.lbl_status.config(text=mensagem)
+        self.root.update_idletasks()
+
+    def ler_csv_inteligente(self, caminho):
+        """
+        Tenta ler o arquivo de todas as formas possíveis para evitar erros de encoding e separador.
+        """
+        tentativas = [
+            ('utf-8', ','),
+            ('utf-8', ';'),
+            ('cp1252', ','),
+            ('cp1252', ';'),
+            ('latin1', ','),
+            ('latin1', ';'),
+        ]
         
-        # Criar figura do matplotlib
-        self.fig, self.ax = plt.subplots(figsize=(10, 6))
-        self.canvas = FigureCanvasTkAgg(self.fig, graph_frame)
-        self.canvas.get_tk_widget().pack(fill=tk.BOTH, expand=True)
+        for encoding, sep in tentativas:
+            try:
+                df = pd.read_csv(caminho, sep=sep, encoding=encoding)
+                df.columns = df.columns.str.strip()
+
+                if 'Tempo_Reacao(s)' in df.columns:
+                    return df
+            except:
+                continue
         
-        # Frame de estatísticas
-        self.stats_frame = tk.Frame(main_frame)
-        self.stats_frame.pack(fill=tk.X, pady=(10, 0))
+        return None
+
+    def carregar_arquivos(self, lista_caminhos):
+        novos_arquivos = 0
+        erros = []
         
-        # Gerar gráfico automaticamente se houver arquivos
-        if self.arquivos_selecionados:
-            self.root.after(1000, self.gerar_grafico)  # Gerar após 1 segundo
-    
-    def recarregar_pasta(self):
-        """Recarrega os arquivos da pasta configurada"""
-        self.arquivos_selecionados.clear()
-        self.carregar_pasta_automatica()
-        self.atualizar_lista_arquivos()
-        
-        if self.arquivos_selecionados:
-            messagebox.showinfo("Recarregado", 
-                               f"Carregados {len(self.arquivos_selecionados)} arquivos da pasta configurada.")
-            self.gerar_grafico()
-        else:
-            messagebox.showwarning("Aviso", 
-                                  "Nenhum arquivo encontrado na pasta configurada.")
-    
-    def selecionar_arquivo(self):
-        arquivos = filedialog.askopenfilenames(
-            title="Selecione os arquivos CSV",
-            filetypes=[("Arquivos CSV", "*.csv"), ("Todos os arquivos", "*.*")]
-        )
-        
-        for arquivo in arquivos:
-            if arquivo not in self.arquivos_selecionados:
-                self.arquivos_selecionados.append(arquivo)
-                self.atualizar_lista_arquivos()
-    
-    def selecionar_pasta(self):
-        pasta = filedialog.askdirectory(title="Selecione a pasta com arquivos CSV")
-        
-        if pasta:
-            arquivos_adicionados = 0
-            for arquivo in os.listdir(pasta):
-                if arquivo.endswith('.csv') and 'teste_agilidade' in arquivo:
-                    caminho_completo = os.path.join(pasta, arquivo)
-                    if caminho_completo not in self.arquivos_selecionados:
-                        self.arquivos_selecionados.append(caminho_completo)
-                        arquivos_adicionados += 1
+        for caminho in lista_caminhos:
+            caminho_norm = os.path.normpath(caminho)
+            if caminho_norm in self.dados_cache:
+                continue
+                
+            df = self.ler_csv_inteligente(caminho_norm)
             
-            self.atualizar_lista_arquivos()
-            
-            if arquivos_adicionados > 0:
-                messagebox.showinfo("Sucesso", f"Adicionados {arquivos_adicionados} arquivos.")
-                self.gerar_grafico()
+            if df is not None:
+                self.dados_cache[caminho_norm] = df
+                self.arquivos_selecionados.append(caminho_norm)
+                novos_arquivos += 1
+
+                nome = os.path.basename(caminho_norm)
+                self.lista_box.insert(tk.END, f"✔ {nome}")
             else:
-                messagebox.showwarning("Aviso", "Nenhum arquivo CSV encontrado na pasta selecionada.")
-    
-    def limpar_selecao(self):
+                erros.append(os.path.basename(caminho))
+                self.lista_box.insert(tk.END, f"❌ ERRO: {os.path.basename(caminho)}")
+                self.lista_box.itemconfig(tk.END, {'fg': 'red'})
+
+        if novos_arquivos > 0:
+            self.atualizar_visualizacao()
+            msg = f"{novos_arquivos} arquivos carregados com sucesso."
+        else:
+            msg = "Nenhum arquivo novo carregado."
+            
+        if erros:
+            msg += f"\nFalha em {len(erros)} arquivos."
+            print("Arquivos com erro:", erros)
+            
+        self.log(msg)
+
+    def carregar_pasta_inicial(self):
+        if os.path.exists(PASTA_PADRAO):
+            csvs = [os.path.join(PASTA_PADRAO, f) for f in os.listdir(PASTA_PADRAO) if f.lower().endswith('.csv')]
+            if csvs:
+                self.carregar_arquivos(csvs)
+            else:
+                self.log(f"Pasta encontrada, mas sem CSVs.")
+        else:
+            self.log("Pasta padrão não encontrada. Selecione manualmente.")
+
+    def selecionar_arquivos(self):
+        arquivos = filedialog.askopenfilenames(filetypes=[("CSV", "*.csv")])
+        if arquivos:
+            self.carregar_arquivos(arquivos)
+
+    def selecionar_pasta(self):
+        pasta = filedialog.askdirectory()
+        if pasta:
+            csvs = [os.path.join(pasta, f) for f in os.listdir(pasta) if f.lower().endswith('.csv')]
+            self.carregar_arquivos(csvs)
+
+    def limpar_tudo(self):
         self.arquivos_selecionados.clear()
-        self.atualizar_lista_arquivos()
+        self.dados_cache.clear()
+        self.lista_box.delete(0, tk.END)
+        self.tabela.delete(*self.tabela.get_children())
         self.ax.clear()
         self.canvas.draw()
-        self.limpar_estatisticas()
-    
-    def atualizar_lista_arquivos(self):
-        self.lista_arquivos.delete(0, tk.END)
-        for arquivo in self.arquivos_selecionados:
-            nome_arquivo = os.path.basename(arquivo)
-            self.lista_arquivos.insert(tk.END, nome_arquivo)
-    
-    def carregar_dados(self):
-        """Carrega os dados dos arquivos CSV selecionados de forma flexível"""
-        self.dados.clear()
-        
-        for arquivo in self.arquivos_selecionados:
-            try:
-                df = pd.read_csv(arquivo)
-                nome_arquivo = os.path.basename(arquivo)
-                
-                # Verificar se as colunas esperadas existem
-                if 'Tempo_Reacao(s)' in df.columns and 'Numero_Clique' in df.columns:
-                    # Carrega todos os dados, independente se são 15, 30 ou outro número
-                    dados_df = df.copy()
-                    
-                    if len(dados_df) > 0:
-                        self.dados[nome_arquivo] = dados_df
-                    else:
-                        print(f"Aviso: {nome_arquivo} está vazio")
-                else:
-                    print(f"Erro: {nome_arquivo} não tem as colunas esperadas")
-                    
-            except Exception as e:
-                print(f"Erro ao carregar {arquivo}: {str(e)}")
-    
-    def gerar_grafico(self):
-        """Gera o gráfico ajustando-se automaticamente ao número de cliques"""
+        self.txt_resumo.config(state="normal")
+        self.txt_resumo.delete("1.0", tk.END)
+        self.txt_resumo.config(state="disabled")
+        self.log("Tudo limpo.")
+
+    def atualizar_visualizacao(self):
         if not self.arquivos_selecionados:
-            messagebox.showwarning("Aviso", "Nenhum arquivo CSV selecionado.")
             return
-        
-        self.carregar_dados()
-        
-        if not self.dados:
-            messagebox.showwarning("Aviso", "Nenhum dado válido foi carregado.")
-            return
-        
+
         self.ax.clear()
-        
-        # Cores para diferentes arquivos
-        cores = plt.cm.Set3(np.linspace(0, 1, len(self.dados)))
-        
-        # Descobre qual é o número máximo de cliques entre todos os arquivos carregados
-        max_cliques = 0
-        for df in self.dados.values():
-            if len(df) > max_cliques:
-                max_cliques = len(df)
-        
-        # Preparar dados para a média geral
+
+        n_arquivos = len(self.arquivos_selecionados)
+        cmap = cm.get_cmap('tab10') if n_arquivos <= 10 else cm.get_cmap('tab20')
+        cores = [cmap(i) for i in np.linspace(0, 1, n_arquivos)]
+
         todos_tempos = []
+        todas_precisoes = []
+        total_erros = 0
+
+        max_len = 0
+        dados_lista = []
+
+        self.tabela.delete(*self.tabela.get_children())
         
-        for i, (nome_arquivo, df) in enumerate(self.dados.items()):
+        for i, caminho in enumerate(self.arquivos_selecionados):
+            df = self.dados_cache[caminho]
+            nome_arquivo = os.path.basename(caminho)
+            nome_limpo = nome_arquivo.replace('.csv', '').replace('teste_', '')
+            
             tempos = df['Tempo_Reacao(s)'].values
-            num_cliques_arquivo = len(tempos)
+
+            dados_lista.append(tempos)
+            max_len = max(max_len, len(tempos))
+
+            media_ind = np.mean(tempos)
+            melhor_ind = np.min(tempos)
+            todos_tempos.extend(tempos)
             
-            # Normaliza o tamanho dos arrays para o cálculo da média
-            if num_cliques_arquivo < max_cliques:
-                # Preenche com NaN se for menor que o máximo
-                tempos_pad = np.pad(tempos, (0, max_cliques - num_cliques_arquivo), 'constant', constant_values=np.nan)
-            else:
-                tempos_pad = tempos[:max_cliques]
+            erros_ind = 0
+            precisao_ind = "-"
             
-            todos_tempos.append(tempos_pad)
+            if 'Erros_Ate_Agora' in df.columns:
+                try: 
+                    erros_ind = int(df['Erros_Ate_Agora'].iloc[-1])
+                    total_erros += erros_ind
+                except: pass
             
-            # Plotar dados individuais
-            x = np.arange(1, num_cliques_arquivo + 1)
-            cor = cores[i]
-            label = nome_arquivo.replace('teste_agilidade_', '').replace('.csv', '')
+            if 'Precisao_Atual(%)' in df.columns:
+                try:
+                    val = float(df['Precisao_Atual(%)'].iloc[-1])
+                    precisao_ind = f"{val:.1f}%"
+                    todas_precisoes.append(val)
+                except: pass
+
+            self.tabela.insert('', 'end', values=(
+                nome_limpo, 
+                f"{media_ind:.3f}", 
+                f"{melhor_ind:.3f}",
+                erros_ind, 
+                precisao_ind
+            ))
+
+            x = np.arange(1, len(tempos) + 1)
+            cor = cores[i % len(cores)]
             
             if self.var_linhas.get():
-                self.ax.plot(x, tempos, color=cor, alpha=0.7, linewidth=1.5, label=label)
+                self.ax.plot(x, tempos, color=cor, alpha=0.4, linewidth=1, label=nome_limpo if n_arquivos < 10 else "")
             
             if self.var_pontos.get():
-                self.ax.scatter(x, tempos, color=cor, alpha=0.8, s=50)
-        
-        # Calcular e plotar média geral
-        if len(todos_tempos) > 0 and self.var_media.get():
-            # numpy nanmean ignora os NaNs, permitindo médias entre arquivos de tamanhos diferentes
-            media_geral = np.nanmean(todos_tempos, axis=0)
-            
-            # Remove NaNs do final se a média for mais curta (para visualização limpa)
-            mask_validos = ~np.isnan(media_geral)
-            x_media = np.arange(1, max_cliques + 1)[mask_validos]
-            y_media = media_geral[mask_validos]
+                self.ax.scatter(x, tempos, color=cor, s=15, alpha=0.6)
 
-            self.ax.plot(x_media, y_media, color='red', linewidth=3, 
-                         label='Média Geral', linestyle='--', marker='o', markersize=6)
+        if self.var_media.get() and dados_lista:
+            matriz = np.full((len(dados_lista), max_len), np.nan)
+            for i, arr in enumerate(dados_lista):
+                matriz[i, :len(arr)] = arr
+                
+            media_geral = np.nanmean(matriz, axis=0)
+            x_media = np.arange(1, len(media_geral) + 1)
             
-            # Adicionar linha de tendência se solicitado
+            self.ax.plot(x_media, media_geral, color='red', linewidth=2.5, label='MÉDIA GERAL', zorder=10)
+            
             if self.var_tendencia.get() and len(x_media) > 1:
-                z = np.polyfit(x_media, y_media, 1)
-                p = np.poly1d(z)
-                self.ax.plot(x_media, p(x_media), "r--", alpha=0.8, linewidth=2, 
-                             label='Tendência (média)')
-        
-        # Configurar o gráfico
-        self.ax.set_xlabel('Número do Clique', fontsize=12, fontweight='bold')
-        self.ax.set_ylabel('Tempo de Reação (segundos)', fontsize=12, fontweight='bold')
-        self.ax.set_title(f'Tempo de Reação ({max_cliques} Cliques)', 
-                          fontsize=14, fontweight='bold', pad=20)
-        
-        # Ajusta o eixo X dinamicamente
-        self.ax.set_xticks(range(1, max_cliques + 1))
-        self.ax.grid(True, alpha=0.3)
-        self.ax.legend(bbox_to_anchor=(1.05, 1), loc='upper left')
-        
-        # Ajustar layout
-        self.fig.tight_layout()
-        self.canvas.draw()
-        
-        # Mostrar estatísticas
-        self.mostrar_estatisticas()
-    
-    def mostrar_estatisticas(self):
-        # Limpar frame de estatísticas
-        for widget in self.stats_frame.winfo_children():
-            widget.destroy()
-        
-        if len(self.dados) == 0:
-            return
-        
-        # Calcular estatísticas gerais
-        todos_tempos = []
-        for df in self.dados.values():
-            tempos_validos = df['Tempo_Reacao(s)'].dropna()
-            todos_tempos.extend(tempos_validos)
-        
-        if not todos_tempos:
-            return
-        
-        todos_tempos = np.array(todos_tempos)
-        
-        # Criar frame para estatísticas
-        stats_text = f"""
-        ESTATÍSTICAS GERAIS ({len(self.dados)} testes):
-        • Média geral: {np.mean(todos_tempos):.3f}s
-        • Desvio padrão: {np.std(todos_tempos):.3f}s
-        • Melhor tempo: {np.min(todos_tempos):.3f}s
-        • Pior tempo: {np.max(todos_tempos):.3f}s
-        • Mediana: {np.median(todos_tempos):.3f}s
-        • Coeficiente de variação: {(np.std(todos_tempos)/np.mean(todos_tempos)*100):.1f}%
-        """
-        
-        tk.Label(self.stats_frame, text=stats_text, justify=tk.LEFT, 
-                font=("Courier", 9), bg="#f0f0f0", relief=tk.SUNKEN, bd=1).pack(fill=tk.X, padx=5, pady=5)
-    
-    def limpar_estatisticas(self):
-        for widget in self.stats_frame.winfo_children():
-            widget.destroy()
+                idx_validos = ~np.isnan(media_geral)
+                xm_valid = x_media[idx_validos]
+                ym_valid = media_geral[idx_validos]
+                
+                if len(xm_valid) > 1:
+                    z = np.polyfit(xm_valid, ym_valid, 1)
+                    p = np.poly1d(z)
+                    self.ax.plot(xm_valid, p(xm_valid), "k--", linewidth=1.5, label='Tendência')
 
-def main():
-    root = tk.Tk()
-    app = GraficoAgilidade(root)
-    root.mainloop()
+        self.ax.set_title("Evolução do Tempo de Reação")
+        self.ax.set_xlabel("Tentativa (Clique)")
+        self.ax.set_ylabel("Tempo (s)")
+        self.ax.grid(True, linestyle='--', alpha=0.5)
+        if n_arquivos <= 10 or self.var_media.get():
+            self.ax.legend(loc='upper right', fontsize='8')
+        
+        self.canvas.draw()
+
+        texto_resumo = f"=== RESUMO GERAL ===\n\n"
+        texto_resumo += f"Arquivos: {n_arquivos}\n"
+        if todos_tempos:
+            texto_resumo += f"Média Geral: {np.mean(todos_tempos):.3f} s\n"
+            texto_resumo += f"Melhor Tempo: {np.min(todos_tempos):.3f} s\n"
+            texto_resumo += f"Pior Tempo: {np.max(todos_tempos):.3f} s\n\n"
+            texto_resumo += f"Total de Erros: {total_erros}\n"
+            if todas_precisoes:
+                texto_resumo += f"Precisão Média: {np.mean(todas_precisoes):.1f} %\n"
+        
+        self.txt_resumo.config(state="normal")
+        self.txt_resumo.delete("1.0", tk.END)
+        self.txt_resumo.insert(tk.END, texto_resumo)
+        self.txt_resumo.config(state="disabled")
 
 if __name__ == "__main__":
-    main()
+    root = tk.Tk()
+    app = AnalisadorAgilidadeApp(root)
+    root.mainloop()
